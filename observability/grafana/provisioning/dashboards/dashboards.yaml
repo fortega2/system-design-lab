@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Dashboards live in this repo: edits made in the UI cannot be saved. To keep a
+# change, export the dashboard JSON and replace the file next to this one.
+providers:
+  - name: lab
+    folder: Lab
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /etc/grafana/provisioning/dashboards
