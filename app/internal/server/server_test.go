@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -40,7 +41,7 @@ func TestHealthz(t *testing.T) {
 
 func TestReadyz(t *testing.T) {
 	ok := func(context.Context) error { return nil }
-	fail := func(context.Context) error { return errors.New("down") }
+	fail := func(context.Context) error { return errors.New("secret-host:5432 refused") }
 
 	tests := []struct {
 		name     string
@@ -65,5 +66,18 @@ func TestReadyz(t *testing.T) {
 				t.Errorf("status = %d, want %d (body: %s)", rec.Code, tt.want, rec.Body)
 			}
 		})
+	}
+}
+
+func TestReadyz_HidesCheckErrors(t *testing.T) {
+	fail := func(context.Context) error { return errors.New("secret-host:5432 refused") }
+	rec := do(t, newTestServer(map[string]ReadinessCheck{"postgres": fail}).Handler(), http.MethodGet, "/readyz")
+
+	body := rec.Body.String()
+	if strings.Contains(body, "secret-host") {
+		t.Errorf("body leaks the check error: %s", body)
+	}
+	if !strings.Contains(body, `"postgres":"unavailable"`) {
+		t.Errorf("body = %s, want it to report postgres as unavailable", body)
 	}
 }

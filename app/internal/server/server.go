@@ -93,15 +93,17 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
 	defer cancel()
 
+	// Error details stay in the logs: they reveal infrastructure (hosts,
+	// users, database names) that anyone reaching /readyz would see.
 	failed := map[string]string{}
 	for name, check := range s.checks {
 		if err := check(ctx); err != nil {
-			failed[name] = err.Error()
+			s.logger.WarnContext(ctx, "readiness check failed", "check", name, "error", err)
+			failed[name] = "unavailable"
 		}
 	}
 
 	if len(failed) > 0 {
-		s.logger.WarnContext(ctx, "readiness check failed", "failed", failed)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "not ready", "failed": failed})
 		return
 	}
