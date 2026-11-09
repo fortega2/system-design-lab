@@ -36,6 +36,10 @@ obs-up: perms ## Start only the observability stack (Grafana :3000, Prometheus :
 obs-down: ## Stop the observability stack (keeps its data volumes)
 	$(OBS_COMPOSE) down
 
+.PHONY: obs-reload
+obs-reload: perms ## Reload the Prometheus config after editing it (SIGHUP)
+	$(OBS_COMPOSE) kill -s HUP prometheus
+
 .PHONY: obs-logs
 obs-logs: ## Follow the observability stack logs
 	$(OBS_COMPOSE) logs -f

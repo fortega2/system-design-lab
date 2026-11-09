@@ -41,8 +41,6 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=7d
       - --storage.tsdb.retention.size=2GB
-      - --web.enable-remote-write-receiver # k6 pushes its metrics here
-      - --web.enable-lifecycle # POST /-/reload after editing the config
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
