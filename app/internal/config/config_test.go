@@ -7,6 +7,13 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
+	// Empty means unset: keep the caller's environment out of the defaults.
+	for _, key := range []string{
+		"PORT", "LOG_LEVEL", "SHUTDOWN_DELAY", "SHUTDOWN_TIMEOUT",
+		"DATABASE_URL", "DB_TIMEOUT", "DB_MAX_CONNS",
+	} {
+		t.Setenv(key, "")
+	}
 	t.Setenv("INSTANCE_NAME", "test-1")
 
 	cfg, err := Load()
