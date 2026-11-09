@@ -59,7 +59,7 @@ func TestMetrics_ClientClosedIs499(t *testing.T) {
 func TestMetrics_Endpoint(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector())
-	h := New("test-1", newTestServer(nil).logger, nil, reg).Handler()
+	h := New(Deps{Instance: "test-1", Logger: newTestServer(nil).logger, Registry: reg}).Handler()
 
 	do(t, h, http.MethodGet, "/healthz")
 	rec := do(t, h, http.MethodGet, "/metrics")

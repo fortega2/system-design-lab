@@ -26,6 +26,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ShutdownTimeout != 10*time.Second {
 		t.Errorf("ShutdownTimeout = %v, want 10s", cfg.ShutdownTimeout)
 	}
+	if cfg.DatabaseURL != "" || cfg.DBMaxConns != 10 || cfg.DBTimeout != 0 {
+		t.Errorf("db config = (%q, %d, %v), want (\"\", 10, 0)", cfg.DatabaseURL, cfg.DBMaxConns, cfg.DBTimeout)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -57,6 +60,9 @@ func TestLoadInvalid(t *testing.T) {
 		{name: "port out of range", key: "PORT", value: "70000"},
 		{name: "bad duration", key: "SHUTDOWN_DELAY", value: "5 seconds"},
 		{name: "bad level", key: "LOG_LEVEL", value: "loud"},
+		{name: "zero db conns", key: "DB_MAX_CONNS", value: "0"},
+		{name: "too many db conns", key: "DB_MAX_CONNS", value: "5000"},
+		{name: "bad db timeout", key: "DB_TIMEOUT", value: "fast"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

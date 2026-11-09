@@ -18,6 +18,7 @@ import (
 
 	"github.com/fortega2/system-design-lab/app/internal/config"
 	"github.com/fortega2/system-design-lab/app/internal/server"
+	"github.com/fortega2/system-design-lab/app/internal/store"
 )
 
 const (
@@ -51,7 +52,19 @@ func run() error {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
-	srv := server.New(cfg.InstanceName, logger, nil, reg)
+	deps := server.Deps{Instance: cfg.InstanceName, Logger: logger, Registry: reg}
+	if cfg.DatabaseURL != "" {
+		st, err := store.New(ctx, cfg.DatabaseURL, cfg.DBMaxConns, cfg.DBTimeout)
+		if err != nil {
+			return fmt.Errorf("creating store: %w", err)
+		}
+		defer st.Close() // runs after the HTTP server has shut down
+		deps.Items = st
+		deps.Checks = map[string]server.ReadinessCheck{"postgres": st.Ping}
+		logger.Info("postgres store enabled", "max_conns", cfg.DBMaxConns, "timeout", cfg.DBTimeout)
+	}
+
+	srv := server.New(deps)
 	httpSrv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
 		Handler:           srv.Handler(),

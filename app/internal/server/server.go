@@ -19,33 +19,42 @@ const readinessTimeout = 2 * time.Second
 // makes /readyz fail, which tells a load balancer to stop sending traffic.
 type ReadinessCheck func(ctx context.Context) error
 
+// Deps are the dependencies of a Server.
+type Deps struct {
+	Instance string
+	Logger   *slog.Logger
+	// Registry receives the HTTP metrics and is exposed on /metrics.
+	Registry *prometheus.Registry
+	// Checks are evaluated by /readyz. Optional.
+	Checks map[string]ReadinessCheck
+	// Items backs the /items routes. Optional: nil leaves them unregistered.
+	Items ItemStore
+}
+
 // Server holds the handlers and the state they share.
 type Server struct {
 	instance string
 	logger   *slog.Logger
 	checks   map[string]ReadinessCheck
+	items    ItemStore
 	registry *prometheus.Registry
 	metrics  *httpMetrics
 	draining atomic.Bool
 }
 
-// New builds a Server. checks may be nil while the app has no dependencies.
-// The HTTP metrics are registered in reg, which /metrics exposes.
-func New(
-	instance string,
-	logger *slog.Logger,
-	checks map[string]ReadinessCheck,
-	reg *prometheus.Registry,
-) *Server {
+// New builds a Server from its dependencies.
+func New(d Deps) *Server {
+	checks := d.Checks
 	if checks == nil {
 		checks = map[string]ReadinessCheck{}
 	}
 	return &Server{
-		instance: instance,
-		logger:   logger,
+		instance: d.Instance,
+		logger:   d.Logger,
 		checks:   checks,
-		registry: reg,
-		metrics:  newHTTPMetrics(reg),
+		items:    d.Items,
+		registry: d.Registry,
+		metrics:  newHTTPMetrics(d.Registry),
 	}
 }
 
@@ -56,6 +65,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 	mux.HandleFunc("GET /slow", s.handleSlow)
 	mux.Handle("GET /metrics", promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{Registry: s.registry}))
+	if s.items != nil {
+		mux.HandleFunc("GET /items/{id}", s.handleGetItem)
+		mux.HandleFunc("POST /items", s.handleCreateItem)
+	}
 	return s.withInstanceHeader(s.metrics.middleware(mux))
 }
 

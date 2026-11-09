@@ -12,7 +12,12 @@ import (
 )
 
 func newTestServer(checks map[string]ReadinessCheck) *Server {
-	return New("test-1", slog.New(slog.DiscardHandler), checks, prometheus.NewRegistry())
+	return New(Deps{
+		Instance: "test-1",
+		Logger:   slog.New(slog.DiscardHandler),
+		Registry: prometheus.NewRegistry(),
+		Checks:   checks,
+	})
 }
 
 func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
