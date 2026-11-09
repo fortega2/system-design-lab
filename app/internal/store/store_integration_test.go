@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // newTestStore connects to DATABASE_URL and makes sure the schema exists.
@@ -74,6 +75,13 @@ func TestStore_CreateAndGet(t *testing.T) {
 	}
 	if got.Name != "widget" || got.Value != "blue" {
 		t.Errorf("Get() = %+v, want name=widget value=blue", got)
+	}
+
+	if n := s.pool.Stat().AcquireCount(); n < 2 {
+		t.Errorf("pool AcquireCount = %d, want >= 2 after two queries", n)
+	}
+	if n := testutil.CollectAndCount(s.Collector(), "db_pool_acquires_total"); n != 1 {
+		t.Errorf("db_pool_acquires_total series = %d, want 1", n)
 	}
 }
 

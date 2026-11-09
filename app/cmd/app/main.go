@@ -59,6 +59,7 @@ func run() error {
 			return fmt.Errorf("creating store: %w", err)
 		}
 		defer st.Close() // runs after the HTTP server has shut down
+		reg.MustRegister(st.Collector())
 		deps.Items = st
 		deps.Checks = map[string]server.ReadinessCheck{"postgres": st.Ping}
 		logger.Info("postgres store enabled", "max_conns", cfg.DBMaxConns, "timeout", cfg.DBTimeout)
