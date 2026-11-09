@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -27,18 +28,26 @@ const (
 )
 
 func main() {
-	if err := run(); err != nil {
+	healthcheck := flag.Bool("healthcheck", false, "probe the local /healthz and exit 0 if healthy")
+	flag.Parse()
+
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("loading config", "error", err)
+		os.Exit(1)
+	}
+
+	if *healthcheck {
+		os.Exit(runHealthcheck(cfg.Port))
+	}
+
+	if err := run(cfg); err != nil {
 		slog.Error("app stopped with error", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
+func run(cfg config.Config) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})).
 		With("instance", cfg.InstanceName)
 	slog.SetDefault(logger)
