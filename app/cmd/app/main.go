@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+
 	"github.com/fortega2/system-design-lab/app/internal/config"
 	"github.com/fortega2/system-design-lab/app/internal/server"
 )
@@ -42,7 +45,13 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New(cfg.InstanceName, logger, nil)
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
+	srv := server.New(cfg.InstanceName, logger, nil, reg)
 	httpSrv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
 		Handler:           srv.Handler(),

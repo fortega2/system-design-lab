@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // readinessTimeout bounds how long /readyz waits on all dependency checks.
@@ -21,11 +24,19 @@ type Server struct {
 	instance string
 	logger   *slog.Logger
 	checks   map[string]ReadinessCheck
+	registry *prometheus.Registry
+	metrics  *httpMetrics
 	draining atomic.Bool
 }
 
 // New builds a Server. checks may be nil while the app has no dependencies.
-func New(instance string, logger *slog.Logger, checks map[string]ReadinessCheck) *Server {
+// The HTTP metrics are registered in reg, which /metrics exposes.
+func New(
+	instance string,
+	logger *slog.Logger,
+	checks map[string]ReadinessCheck,
+	reg *prometheus.Registry,
+) *Server {
 	if checks == nil {
 		checks = map[string]ReadinessCheck{}
 	}
@@ -33,6 +44,8 @@ func New(instance string, logger *slog.Logger, checks map[string]ReadinessCheck)
 		instance: instance,
 		logger:   logger,
 		checks:   checks,
+		registry: reg,
+		metrics:  newHTTPMetrics(reg),
 	}
 }
 
@@ -42,7 +55,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 	mux.HandleFunc("GET /slow", s.handleSlow)
-	return s.withInstanceHeader(mux)
+	mux.Handle("GET /metrics", promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{Registry: s.registry}))
+	return s.withInstanceHeader(s.metrics.middleware(mux))
 }
 
 // StartDraining makes /readyz fail from now on while the server keeps

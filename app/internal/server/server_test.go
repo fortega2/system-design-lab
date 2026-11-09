@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func newTestServer(checks map[string]ReadinessCheck) *Server {
-	return New("test-1", slog.New(slog.DiscardHandler), checks)
+	return New("test-1", slog.New(slog.DiscardHandler), checks, prometheus.NewRegistry())
 }
 
 func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
