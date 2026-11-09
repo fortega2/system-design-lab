@@ -1,0 +1,8 @@
+bin/
+**/*_test.go
+.git
+.idea/
+.vscode/
+*.swp
+Dockerfile
+.dockerignore
