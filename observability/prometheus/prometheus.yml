@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  # cAdvisor sees every container on the machine. Keep only the lab ones:
+  # compose project "observability" (standalone) or "lab-*" (each phase).
+  - job_name: cadvisor
+    static_configs:
+      - targets: [cadvisor:8080]
+    metric_relabel_configs:
+      - source_labels: [container_label_com_docker_compose_project]
+        regex: observability|lab-.+
+        action: keep
+
+  # Any container labeled lab.scrape=true and attached to the "lab" network.
+  # The port comes from the lab.metrics_port label (required).
+  - job_name: lab
+    docker_sd_configs:
+      - host: tcp://socket-proxy:2375
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: [lab.scrape=true]
+    relabel_configs:
+      - source_labels: [__meta_docker_network_name]
+        regex: lab
+        action: keep
+      - source_labels: [__meta_docker_network_ip, __meta_docker_container_label_lab_metrics_port]
+        regex: (.+);(.+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [__meta_docker_container_name]
+        regex: /(.*)
+        target_label: container
