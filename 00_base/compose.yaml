@@ -1,0 +1,50 @@
+# Phase 0: the app and Postgres, with the shared observability stack.
+# Start it with `make up` (PHASE defaults to 00_base).
+name: lab-00-base
+
+include:
+  - ../observability/compose.yaml
+
+volumes:
+  postgres-data:
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab # local only: the port is not published
+      POSTGRES_DB: lab
+    # Deliberately small so it is the first thing to saturate under load.
+    command: [postgres, -c, shared_buffers=64MB, -c, max_connections=50]
+    cpus: 1
+    mem_limit: 512m
+    volumes:
+      # Init scripts run only when the data volume is empty.
+      - ../app/schema:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD, pg_isready, -U, lab, -d, lab]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [lab]
+
+  app:
+    image: sdlab/app:dev
+    build: ../app
+    environment:
+      DATABASE_URL: postgres://lab:lab@postgres:5432/lab
+      DB_MAX_CONNS: 10
+      # No query timeout on purpose: phase 0 shows what happens without one.
+      DB_TIMEOUT: 0s
+    cpus: 2
+    mem_limit: 256m
+    labels:
+      lab.scrape: "true"
+      lab.metrics_port: "8080"
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [lab]

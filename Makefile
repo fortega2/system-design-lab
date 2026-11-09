@@ -5,10 +5,19 @@ APP_DIR     := app
 APP_IMAGE   := sdlab/app:dev
 OBS_COMPOSE := docker compose -f observability/compose.yaml
 
+# Phase the up/down/logs targets act on: make up PHASE=01_load_balancing
+PHASE         ?= 00_base
+PHASE_COMPOSE := docker compose -f $(PHASE)/compose.yaml
+
+# Disposable Postgres for the integration tests (never the lab's database).
+TEST_PG       := sdlab-test-postgres
+TEST_PG_IMAGE := postgres:18.6-alpine
+TEST_PG_PORT  := 55432
+
 # Directories with config files bind-mounted into containers. Containers run
 # as other (non-root) users, so these must be world-readable even when the
 # shell umask is restrictive (e.g. 077).
-CONFIG_DIRS := observability
+CONFIG_DIRS := observability 00_base app/schema
 
 .PHONY: help
 help: ## Show available targets
@@ -20,6 +29,17 @@ check: ## Run vet, tests, lint and vulnerability scan on the app
 	cd $(APP_DIR) && go vet ./... && go test -race ./... && \
 		golangci-lint run --build-tags=integration ./... && govulncheck ./...
 
+.PHONY: test-integration
+test-integration: ## Run the integration tests against a throwaway Postgres
+	@trap 'docker rm -f $(TEST_PG) >/dev/null' EXIT; \
+	docker run -d --rm --name $(TEST_PG) -e POSTGRES_PASSWORD=test \
+		-p 127.0.0.1:$(TEST_PG_PORT):5432 $(TEST_PG_IMAGE) >/dev/null; \
+	for _ in {1..30}; do \
+		docker exec $(TEST_PG) pg_isready -h 127.0.0.1 -U postgres -q 2>/dev/null && break; sleep 1; \
+	done; \
+	cd $(APP_DIR) && DATABASE_URL=postgres://postgres:test@127.0.0.1:$(TEST_PG_PORT)/postgres \
+		go test -race -count=1 -tags=integration ./...
+
 .PHONY: app-image
 app-image: ## Build the app container image
 	docker build -t $(APP_IMAGE) $(APP_DIR)
@@ -27,6 +47,18 @@ app-image: ## Build the app container image
 .PHONY: perms
 perms: ## Make mounted config files readable by container users
 	chmod -R a+rX $(CONFIG_DIRS)
+
+.PHONY: up
+up: perms ## Start the phase stack, rebuilding the app (PHASE=00_base by default)
+	$(PHASE_COMPOSE) up -d --build
+
+.PHONY: down
+down: ## Stop the phase stack (keeps its data volumes)
+	$(PHASE_COMPOSE) down
+
+.PHONY: logs
+logs: ## Follow the phase stack logs
+	$(PHASE_COMPOSE) logs -f
 
 .PHONY: obs-up
 obs-up: perms ## Start only the observability stack (Grafana :3000, Prometheus :9090)

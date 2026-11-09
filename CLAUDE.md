@@ -19,6 +19,10 @@ roadmap lives in `system_design_lab.md` (local only, excluded from git).
 - `make help`: list targets.
 - `make check`: go vet, tests with `-race`, golangci-lint (with the
   `integration` tag) and govulncheck. Must pass before every commit.
+- `make test-integration`: integration tests against a throwaway Postgres
+  container (removed afterwards; never the lab's database).
+- `make up` / `make down` / `make logs`: the current phase stack, observability
+  included (`PHASE=00_base` by default; `make up PHASE=01_load_balancing`).
 - `make app-image`: build the app image.
 - `make obs-up` / `make obs-down` / `make obs-logs`: observability stack only.
 
