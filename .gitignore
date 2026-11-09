@@ -16,3 +16,6 @@ coverage.*
 
 # k6 results
 **/results/
+
+# Claude Code personal notes
+CLAUDE.local.md
