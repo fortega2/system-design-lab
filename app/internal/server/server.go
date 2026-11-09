@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// readinessTimeout bounds how long /readyz waits on all dependency checks.
+const readinessTimeout = 2 * time.Second
+
 // ReadinessCheck reports whether a dependency is usable. A non-nil error
 // makes /readyz fail, which tells a load balancer to stop sending traffic.
 type ReadinessCheck func(ctx context.Context) error
@@ -60,7 +63,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
 	defer cancel()
 
 	failed := map[string]string{}

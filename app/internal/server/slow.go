@@ -35,7 +35,7 @@ func (s *Server) handleSlow(w http.ResponseWriter, r *http.Request) {
 
 	delay := p.base
 	if p.jitter > 0 {
-		delay += time.Duration(rand.Int64N(int64(p.jitter) + 1))
+		delay += time.Duration(rand.Int64N(int64(p.jitter) + 1)) //nolint:gosec // non-cryptographic: simulated latency and failures
 	}
 
 	timer := time.NewTimer(delay)
@@ -48,7 +48,7 @@ func (s *Server) handleSlow(w http.ResponseWriter, r *http.Request) {
 	case <-timer.C:
 	}
 
-	if rand.Float64() < p.failRate {
+	if rand.Float64() < p.failRate { //nolint:gosec // non-cryptographic: simulated latency and failures
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "injected failure"})
 		return
 	}

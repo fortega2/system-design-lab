@@ -17,6 +17,11 @@ import (
 	"github.com/fortega2/system-design-lab/app/internal/server"
 )
 
+const (
+	readHeaderTimeout = 5 * time.Second
+	idleTimeout       = 60 * time.Second
+)
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("app stopped with error", "error", err)
@@ -41,8 +46,8 @@ func run() error {
 	httpSrv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
 		Handler:           srv.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 
 	serveErr := make(chan error, 1)

@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+const (
+	defaultPort            = 8080
+	defaultShutdownTimeout = 10 * time.Second
+)
+
 // Config holds every knob the lab app exposes. Each experiment changes
 // behavior by setting environment variables, never by changing code.
 type Config struct {
@@ -33,11 +38,11 @@ func Load() (Config, error) {
 
 	var errs []error
 	cfg := Config{
-		Port:            intEnv("PORT", 8080, &errs),
+		Port:            intEnv("PORT", defaultPort, &errs),
 		InstanceName:    stringEnv("INSTANCE_NAME", hostname),
 		LogLevel:        levelEnv("LOG_LEVEL", slog.LevelInfo, &errs),
 		ShutdownDelay:   durationEnv("SHUTDOWN_DELAY", 0, &errs),
-		ShutdownTimeout: durationEnv("SHUTDOWN_TIMEOUT", 10*time.Second, &errs),
+		ShutdownTimeout: durationEnv("SHUTDOWN_TIMEOUT", defaultShutdownTimeout, &errs),
 	}
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {

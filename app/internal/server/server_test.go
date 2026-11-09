@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,13 +10,13 @@ import (
 )
 
 func newTestServer(checks map[string]ReadinessCheck) *Server {
-	return New("test-1", slog.New(slog.NewTextHandler(io.Discard, nil)), checks)
+	return New("test-1", slog.New(slog.DiscardHandler), checks)
 }
 
 func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), method, path, nil))
 	return rec
 }
 
