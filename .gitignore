@@ -1,0 +1,18 @@
+# Go
+app/bin/
+*.test
+*.out
+coverage.*
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local env overrides
+.env
+*.local.yaml
+
+# k6 results
+**/results/
