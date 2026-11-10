@@ -8,6 +8,7 @@ OBS_COMPOSE := docker compose -f observability/compose.yaml
 # Phase the up/down/logs targets act on: make up PHASE=01_load_balancing
 PHASE         ?= 00_base
 PHASE_COMPOSE := docker compose -f $(PHASE)/compose.yaml
+LOAD_SCRIPT   ?= constant.js
 
 # Disposable Postgres for the integration tests (never the lab's database).
 TEST_PG       := sdlab-test-postgres
@@ -59,6 +60,10 @@ down: ## Stop the phase stack (keeps its data volumes)
 .PHONY: logs
 logs: ## Follow the phase stack logs
 	$(PHASE_COMPOSE) logs -f
+
+.PHONY: load
+load: perms ## Run the phase k6 script (RATE=200 DURATION=5m LOAD_SCRIPT=constant.js)
+	$(PHASE_COMPOSE) run --rm k6 run /scripts/$(LOAD_SCRIPT)
 
 .PHONY: obs-up
 obs-up: perms ## Start only the observability stack (Grafana :3000, Prometheus :9090)

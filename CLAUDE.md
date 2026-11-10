@@ -23,6 +23,8 @@ roadmap lives in `system_design_lab.md` (local only, excluded from git).
   container (removed afterwards; never the lab's database).
 - `make up` / `make down` / `make logs`: the current phase stack, observability
   included (`PHASE=00_base` by default; `make up PHASE=01_load_balancing`).
+- `make load`: run the phase k6 script in a throwaway container
+  (`RATE=200 DURATION=5m` by default; `make load RATE=1000 DURATION=2m`).
 - `make app-image`: build the app image.
 - `make obs-up` / `make obs-down` / `make obs-logs`: observability stack only.
 

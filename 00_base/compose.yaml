@@ -48,3 +48,18 @@ services:
       postgres:
         condition: service_healthy
     networks: [lab]
+
+  # Load generator, only through `make load` (the profile keeps `make up` from
+  # starting it).
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: [load]
+    volumes:
+      - ./load:/scripts:ro
+    environment:
+      RATE: ${RATE:-200}
+      DURATION: ${DURATION:-5m}
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [lab]
