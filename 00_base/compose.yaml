@@ -17,7 +17,7 @@ services:
       POSTGRES_DB: lab
     # Deliberately small so it is the first thing to saturate under load.
     command: [postgres, -c, shared_buffers=64MB, -c, max_connections=50]
-    cpus: 1
+    cpus: ${PG_CPUS:-1}
     mem_limit: 512m
     volumes:
       # Init scripts run only when the data volume is empty.
@@ -35,10 +35,10 @@ services:
     build: ../app
     environment:
       DATABASE_URL: postgres://lab:lab@postgres:5432/lab
-      DB_MAX_CONNS: 10
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-10}
       # No query timeout on purpose: phase 0 shows what happens without one.
       DB_TIMEOUT: 0s
-    cpus: 2
+    cpus: ${APP_CPUS:-2}
     mem_limit: 256m
     labels:
       lab.scrape: "true"
@@ -59,6 +59,7 @@ services:
     environment:
       RATE: ${RATE:-200}
       DURATION: ${DURATION:-5m}
+      MAX_VUS: ${MAX_VUS:-500}
     depends_on:
       app:
         condition: service_healthy

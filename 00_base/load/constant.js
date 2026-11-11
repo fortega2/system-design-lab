@@ -6,12 +6,14 @@
 //
 //   make load                          # 200 req/s for 5m
 //   make load RATE=1000 DURATION=2m
+//   make load RATE=30000 MAX_VUS=2000  # past the ceiling without capping k6
 import http from 'k6/http';
 import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://app:8080';
 const RATE = parseInt(__ENV.RATE || '200', 10);
 const DURATION = __ENV.DURATION || '5m';
+const MAX_VUS = parseInt(__ENV.MAX_VUS || '500', 10);
 const SEED_ITEMS = 100;
 const WRITE_RATIO = 0.1;
 
@@ -25,10 +27,10 @@ export const options = {
       rate: RATE,
       timeUnit: '1s',
       duration: DURATION,
-      preAllocatedVUs: 50,
+      preAllocatedVUs: Math.min(50, MAX_VUS),
       // Every hung request holds a VU. Past maxVUs k6 reports
       // dropped_iterations: saturation seen from the client side.
-      maxVUs: 500,
+      maxVUs: MAX_VUS,
     },
   },
   // Reference values for a healthy system; they never abort the run.

@@ -54,7 +54,7 @@ perms: ## Make mounted config files readable by container users
 	chmod -R a+rX $(CONFIG_DIRS)
 
 .PHONY: up
-up: perms ## Start the phase stack, rebuilding the app (PHASE=00_base by default)
+up: perms ## Start the phase stack, rebuilding the app (PHASE=00_base; phase knobs e.g. PG_CPUS=2)
 	$(PHASE_COMPOSE) up -d --build
 
 .PHONY: down
@@ -66,8 +66,8 @@ logs: ## Follow the phase stack logs
 	$(PHASE_COMPOSE) logs -f
 
 .PHONY: load
-load: perms ## Run the phase k6 script (RATE=200 DURATION=5m LOAD_SCRIPT=constant.js)
-	$(PHASE_COMPOSE) run --rm k6 run /scripts/$(LOAD_SCRIPT)
+load: perms ## Run the phase k6 script against the running stack (RATE=200 DURATION=5m MAX_VUS=500)
+	$(PHASE_COMPOSE) run --rm --no-deps k6 run /scripts/$(LOAD_SCRIPT)
 
 .PHONY: diagrams
 diagrams: ## Render every NN_*/diagrams/*.d2 to SVG (needs d2 installed)
