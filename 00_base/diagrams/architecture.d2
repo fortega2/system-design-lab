@@ -1,0 +1,65 @@
+# Phase 0: one app instance in front of one Postgres, observed by the shared
+# stack. Render with `make diagrams`; edit live with `d2 --watch <this file>`.
+#
+# Solid arrows: the request path. Dashed arrows: observability.
+# No explicit colors: they would not follow the dark theme.
+
+direction: down
+
+classes: {
+  obs: {
+    style.stroke-dash: 4
+  }
+}
+
+you: "Vos (navegador / curl)" {
+  shape: person
+}
+
+phase: "Fase 0 · lab-00-base" {
+  direction: right
+
+  k6: "k6\nconstant-arrival-rate\nRATE req/s (make load)"
+
+  app: "app (Go)\n2 CPU · 256 MB\npool de 10 conexiones\nsin timeout de base"
+
+  postgres: "Postgres 18\n1 CPU · 512 MB\nshared_buffers 64 MB\nmax_connections 50" {
+    shape: cylinder
+  }
+
+  k6 -> app: "HTTP keep-alive\n90% GET · 10% POST"
+  app -> postgres: "pgx pool"
+}
+
+obs: "Observabilidad (compartida)" {
+  direction: right
+
+  prometheus: "Prometheus\nscrape cada 5s"
+  cadvisor: "cAdvisor\nCPU y memoria\npor contenedor"
+  alloy: "Alloy"
+  loki: "Loki"
+  grafana: "Grafana\ndashboard Lab overview"
+
+  prometheus -> cadvisor: "scrape" {class: obs}
+  alloy -> loki: "push logs" {class: obs}
+  grafana -> prometheus: "PromQL" {class: obs}
+  grafana -> loki: "LogQL" {class: obs}
+}
+
+host: "Docker host" {
+  direction: right
+
+  proxy: "socket-proxy\nsolo lectura"
+  sock: "docker.sock" {
+    shape: hexagon
+  }
+  proxy -> sock
+}
+
+you -> phase.app: ":8080"
+you -> obs.grafana: ":3000"
+
+obs.prometheus -> phase.app: "scrape /metrics\n(label lab.scrape=true)" {class: obs}
+obs.prometheus -> host.proxy: "descubre\ncontenedores" {class: obs}
+obs.alloy -> host.proxy: "lee logs de\ncontenedores" {class: obs}
+obs.cadvisor -> host: "lee cgroups\n(privilegiado)" {class: obs}

@@ -10,6 +10,10 @@ PHASE         ?= 00_base
 PHASE_COMPOSE := docker compose -f $(PHASE)/compose.yaml
 LOAD_SCRIPT   ?= constant.js
 
+# Diagrams: D2 installed on the host (sudo pacman -S d2). tala lays these
+# out best; the light theme switches to the dark one with the viewer's OS.
+D2_FLAGS := --layout=tala --theme=0 --dark-theme=200 --pad=20
+
 # Disposable Postgres for the integration tests (never the lab's database).
 TEST_PG       := sdlab-test-postgres
 TEST_PG_IMAGE := postgres:18.6-alpine
@@ -64,6 +68,13 @@ logs: ## Follow the phase stack logs
 .PHONY: load
 load: perms ## Run the phase k6 script (RATE=200 DURATION=5m LOAD_SCRIPT=constant.js)
 	$(PHASE_COMPOSE) run --rm k6 run /scripts/$(LOAD_SCRIPT)
+
+.PHONY: diagrams
+diagrams: ## Render every NN_*/diagrams/*.d2 to SVG (needs d2 installed)
+	@command -v d2 >/dev/null || { echo "d2 not found: sudo pacman -S d2" >&2; exit 1; }
+	@for f in [0-9][0-9]_*/diagrams/*.d2; do \
+		d2 $(D2_FLAGS) "$$f" "$${f%.d2}.svg" || exit 1; \
+	done
 
 .PHONY: obs-up
 obs-up: perms ## Start only the observability stack (Grafana :3000, Prometheus :9090)
