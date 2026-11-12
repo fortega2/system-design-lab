@@ -5,9 +5,11 @@
 set -euo pipefail
 
 cmd=$(jq -r '.tool_input.command // empty')
-grep -qE '(^|[;&|[:space:]])git( -C [^ ]+)? commit\b' <<<"$cmd" || exit 0
+# git only at the start of a command, so prose mentioning it doesn't match.
+at_cmd='(^|[;&|(])[[:space:]]*git( -C [^ ]+)?'
+grep -qE "$at_cmd commit\b" <<<"$cmd" || exit 0
 
-if grep -qE '(^|[;&|[:space:]])git( -C [^ ]+)? add\b' <<<"$cmd"; then
+if grep -qE "$at_cmd add\b" <<<"$cmd"; then
   echo "Blocked: run 'git add' and 'git commit' in separate calls, so the files to commit can be reviewed first." >&2
   exit 2
 fi
