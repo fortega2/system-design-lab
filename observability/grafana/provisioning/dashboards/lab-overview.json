@@ -462,7 +462,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -527,7 +526,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -605,7 +603,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -670,7 +667,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -814,7 +810,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -879,7 +874,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -1023,7 +1017,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -1128,7 +1121,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -1193,7 +1185,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -1258,7 +1249,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -1323,7 +1313,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -1388,7 +1377,6 @@
           "placement": "bottom",
           "showLegend": true,
           "calcs": [
-            "mean",
             "max",
             "lastNotNull"
           ]
@@ -2002,7 +1990,6 @@
               "placement": "bottom",
               "showLegend": true,
               "calcs": [
-                "mean",
                 "max",
                 "lastNotNull"
               ]
@@ -2067,7 +2054,6 @@
               "placement": "bottom",
               "showLegend": true,
               "calcs": [
-                "mean",
                 "max",
                 "lastNotNull"
               ]
