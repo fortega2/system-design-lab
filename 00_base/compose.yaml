@@ -20,8 +20,10 @@ services:
     cpus: ${PG_CPUS:-1}
     mem_limit: 512m
     volumes:
-      # Init scripts run only when the data volume is empty.
-      - ../app/schema:/docker-entrypoint-initdb.d:ro
+      # Init runs only when the data volume is empty.
+      - ../observability/postgres/init.sh:/docker-entrypoint-initdb.d/000_init.sh:ro
+      - ../app/schema:/lab/schema:ro
+      - ../observability/postgres:/lab/monitoring:ro
       - postgres-data:/var/lib/postgresql
     healthcheck:
       test: [CMD, pg_isready, -U, lab, -d, lab]
@@ -44,6 +46,20 @@ services:
       lab.scrape: "true"
       lab.metrics_port: "8080"
     ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [lab]
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://exporter:exporter@postgres:5432/lab?sslmode=disable
+    cpus: 0.25
+    mem_limit: 64m
+    labels:
+      lab.scrape: "true"
+      lab.metrics_port: "9187"
     depends_on:
       postgres:
         condition: service_healthy
