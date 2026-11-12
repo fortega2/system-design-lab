@@ -18,6 +18,11 @@ make load RATE=200 DURATION=5m        # k6 a tasa constante (ver load/constant.j
 make down                             # baja todo y conserva los volúmenes
 ```
 
+Los recursos se cambian sin editar el compose: `make up PG_CPUS=2 APP_CPUS=1
+DB_MAX_CONNS=20` y `make load RATE=35000 MAX_VUS=2000`. Sin variables quedan
+los valores de la tabla de abajo. `make load` corre contra el stack que ya está
+levantado y no lo toca (`--no-deps`): primero `make up`.
+
 | Qué | Dónde |
 |---|---|
 | Dashboard RED | http://localhost:3000/d/lab-overview |
@@ -36,8 +41,8 @@ Para empezar con la base vacía: `make down && docker volume rm lab-00-base_post
 | Componente | Límites y configuración |
 |---|---|
 | Postgres 18 | 1 CPU, 512 MB, `shared_buffers=64MB`, `max_connections=50` |
-| app | 2 CPU, 256 MB, pool de 10 conexiones, **sin timeout de base** (`DB_TIMEOUT=0s`) |
-| k6 | hasta 500 VUs; timeout por request de 60 s (el default) |
+| app | 2 CPU, 256 MB, pool de 10 conexiones, **sin timeout de base** (`DB_TIMEOUT=0s`). Go 1.27 ajusta `GOMAXPROCS` al límite de CPU del contenedor, redondeado para arriba y con mínimo 2 (no hay que setearlo; setearlo apaga el ajuste) |
+| k6 | hasta 500 VUs (`MAX_VUS`); timeout por request de 60 s (el default) |
 | Host | Ryzen 5 5600X (6 núcleos / 12 hilos), 32 GB, NVMe; k6 corre en la misma máquina |
 
 Los números de abajo valen para este entorno. Lo que se puede llevar a otro
@@ -200,6 +205,91 @@ y 0 en uso, mientras ~500 requests esperaban. No medí qué estaban haciendo
 exactamente esas 10 (reintentos de conexión que no fallan rápido, por ejemplo).
 Vale la pena investigarlo cuando se agregue el timeout de base.
 
+## E4 · Sacar y poner recursos: ¿adónde se mueve el cuello de botella?
+
+**Hipótesis.** El techo de E1 lo pone la CPU de Postgres, así que debería
+seguir a esa CPU. Pero no indefinidamente: con más CPU en la base, el límite
+pasa a otro lado.
+
+| # | Postgres | app | Pool | Predicción |
+|---|---|---|---|---|
+| A | **0,5** | 2 | 10 | el techo cae casi a la mitad, ~7–8k |
+| B | 1 | 2 | 10 | control: ~14–16k, como E1 |
+| C | **2** | 2 | 10 | 22–27k, no ~31k: el límite pasa a ser la app o el host |
+| D | 2 | 2 | **5** | el pool vuelve a ser el cuello: Postgres queda por debajo de 2 CPU |
+| E | 2 | 2 | **20** | el mismo techo que C, con más throttling y peor p99 |
+| F | 2 | **1** | 10 | la app pasa a ser el cuello (~15k) y Postgres queda ocioso |
+
+**Carga.** Todas las corridas con `make load RATE=35000 DURATION=1m
+MAX_VUS=2000`. Esa carga está por encima de cualquier techo, así que lo
+atendido *es* el techo de cada configuración. Hice una sola corrida por
+configuración, con las métricas de los últimos 45 s. Con el ±7% de ruido entre
+corridas, las diferencias chicas (C contra E) son orientativas.
+
+**Resultado.**
+
+| # | Postgres / app / pool | Atendido | CPU Postgres | CPU app | Throttling | CPU k6 | CPU del lab | Conexión retenida | p50 / p99 server |
+|---|---|---|---|---|---|---|---|---|---|
+| A | 0,5 / 2 / 10 | 7,6k | **0,50** | 0,44 | Postgres 2,7 s/s | 1,0 | 2,0 | — | 300 / 496 ms |
+| B | 1 / 2 / 10 | 15,2k | **1,00** | 0,78 | Postgres 1,5 s/s | 2,0 | 3,9 | — | 174 / 248 ms |
+| C | 2 / 2 / 10 | 24,8k | 1,62 | 1,24 | ~0 | 3,3 | 6,2 | 400 µs | 77 / 230 ms |
+| D | 2 / 2 / 5 | 18,2k | 1,19 | 1,18 | ~0 | 2,5 | 4,9 | 275 µs | 163 / 248 ms |
+| E | 2 / 2 / 20 | 27,2k | 1,79 | 1,49 | ~0 | 3,6 | 6,9 | 735 µs | 76 / 200 ms |
+| F | 2 / 1 / 10 | 17,4k | 1,13 | **1,00** | app 0,75 s/s | 2,3 | 4,5 | 575 µs | 172 / 248 ms |
+
+En todas las corridas el 100% de los pedidos de conexión encontró el pool
+lleno, y no hubo ningún error. "Conexión retenida" es pool ÷ throughput: cuánto
+tiempo ocupa cada request una conexión. En A y B no se compara, porque ahí
+la conexión espera adentro de un Postgres saturado. "CPU del lab" suma todos
+los contenedores, k6 incluido, sobre 12 hilos.
+
+- **El costo por request es la constante del sistema.** Postgres gasta ~66 µs
+  de CPU por request en todas las corridas (0,50 / 7,6k = 1,79 / 27,2k). Por
+  eso, mientras el límite es la CPU de la base, el techo es lineal: con la
+  mitad de CPU se atiende exactamente la mitad (A contra B).
+- **Duplicar la CPU de la base dio 1,63 veces más, no 2 (C).** Postgres quedó
+  con 0,38 CPU libre y sin throttling, y la app tampoco estaba al tope. El
+  límite pasó al pool. Visto con la ley de Little, el throughput es conexiones
+  ÷ tiempo retenido: 10 ÷ 400 µs ≈ 25k.
+- **El tiempo retenido crece con la carga del host.** Con 1 CPU y pool 3 (E2)
+  era ~230 µs. Acá va de 275 µs (D, host más tranquilo) a 735 µs (E, 6,9 hilos
+  ocupados en 6 núcleos físicos). Por eso agrandar el pool rinde cada vez menos:
+  de 3,6k req/s por conexión con 5 a 1,4k con 20.
+- **Con pool 20 no apareció el costo de E2 (E).** Fue +10% de throughput, mejor
+  p99 y casi sin throttling. Lo que pesaba en E2 eran 50 conexiones para 1 CPU.
+  Acá son 10 por CPU. El "demasiadas conexiones" depende de cuántas haya por
+  core, no del número absoluto.
+- **Con la app limitada, el síntoma aparece en el pool (F).** La app está
+  clavada en 1,0 CPU y frenada 0,75 s/s, y Postgres tiene casi una CPU libre.
+  Aun así, el dashboard del pool se ve igual que en D (100% de esperas): cuando
+  el kernel congela la app, los requests retienen conexiones sin usarlas (575
+  µs contra 400 µs). Mirando solo el pool uno lo agrandaría. La causa se ve en
+  el throttling de cada contenedor.
+- **Con saturación, la latencia mide la cola, no el trabajo.** En todas las
+  corridas, throughput × latencia ≈ 2.000, el tope de VUs de k6. Con más VUs,
+  la latencia sube y el throughput no cambia.
+
+**En qué me equivoqué.**
+
+- **C:** acerté el número (24,8k dentro de 22–27k) pero no la causa. Esperaba
+  que limitara la app o el host, y limitó el pool. Mi cálculo de "con 8–10
+  conexiones alcanza para 2 CPU" usaba el tiempo retenido de E2 como si fuera
+  fijo, y crece con la carga.
+- **E:** predije lo contrario de lo que pasó, porque extrapolé el número
+  absoluto de E2 (pool 50) sin dividir por los cores.
+
+**Lo que no esperaba.**
+
+- **k6 es lo que más CPU consume:** 3,6 CPU en E, más que Postgres y la app
+  juntos. En un host compartido, el generador de carga le roba CPU al sistema
+  que mide.
+- **`GOMAXPROCS` no baja de 2.** Con `APP_CPUS=1` quedó en 2. Dos hilos de Go
+  gastan la cuota de 1 CPU en medio período y el resto del período quedan
+  congelados: eso es el throttling de la app en F.
+- **La app gastó casi la misma CPU en D que en C** (1,18 contra 1,24) con un
+  27% menos de requests. Puede ser el costo de manejar 2.000 goroutines
+  esperando 5 conexiones. No lo medí.
+
 ## Trampas de medición
 
 Aparecieron en esta fase y van a volver a aparecer en todas:
@@ -221,7 +311,17 @@ Aparecieron en esta fase y van a volver a aparecer en todas:
    resultado, puede leer la instancia equivocada.
 5. **k6 corre en la misma máquina.** Hay que confirmar que el host no esté al
    tope (`docker stats` o la CPU de todos los contenedores) antes de culpar al
-   sistema.
+   sistema. En E4, k6 llegó a usar 3,6 CPU.
+6. **`docker compose run` recrea las dependencias si cambió su configuración.**
+   `make up PG_CPUS=0.5` seguido de un `make load` sin esa variable recreaba
+   Postgres en silencio con el valor por defecto, justo antes de la carga. Se
+   detectó porque Postgres usaba 1,0 CPU con un límite de 0,5. Por eso `make
+   load` usa `--no-deps`. Antes de interpretar una corrida, verificar los
+   límites reales (`docker inspect ... NanoCpus`).
+7. **La leyenda `mean` de Grafana promedia todo el rango visible.** Incluye los
+   minutos sin carga entre corridas: "DB pool: waits/s" mostraba ~13k cuando
+   la meseta de la corrida era 25k. Para leer una corrida hay que mirar la
+   meseta o el `max`.
 
 ## Conclusiones y mitigaciones
 
