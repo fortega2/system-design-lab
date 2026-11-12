@@ -35,12 +35,16 @@ requests por segundo pase lo que pase, 90% `GET /items/{id}` y 10%
 bajar la carga sin que nadie lo note.
 
 Para empezar con la base vacía: `make down && docker volume rm lab-00-base_postgres-data`.
+Hace falta una vez para que exista el usuario `exporter`: los scripts de inicio
+(`observability/postgres/init.sh`, que aplica `app/schema` y el rol de
+monitoreo) solo corren cuando se crea el volumen.
 
 ### Configuración medida
 
 | Componente | Límites y configuración |
 |---|---|
 | Postgres 18 | 1 CPU, 512 MB, `shared_buffers=64MB`, `max_connections=50` |
+| postgres-exporter | 0,25 CPU, 64 MB; usuario `exporter` con `pg_monitor`, ocupa 1 de las 50 conexiones |
 | app | 2 CPU, 256 MB, pool de 10 conexiones, **sin timeout de base** (`DB_TIMEOUT=0s`). Go 1.27 ajusta `GOMAXPROCS` al límite de CPU del contenedor, redondeado para arriba y con mínimo 2 (no hay que setearlo; setearlo apaga el ajuste) |
 | k6 | hasta 500 VUs (`MAX_VUS`); timeout por request de 60 s (el default) |
 | Host | Ryzen 5 5600X (6 núcleos / 12 hilos), 32 GB, NVMe; k6 corre en la misma máquina |
@@ -290,6 +294,52 @@ los contenedores, k6 incluido, sobre 12 hilos.
   27% menos de requests. Puede ser el costo de manejar 2.000 goroutines
   esperando 5 conexiones. No lo medí.
 
+## E5 · Postgres por dentro
+
+Con `postgres_exporter` se ve qué hacen las conexiones adentro de Postgres
+(fila "Postgres" del dashboard). Repetí B y E de E4 mirando
+`pg_stat_activity`.
+
+**Hipótesis.** En B (1 CPU, pool 10), las 10 conexiones de la app están
+activas casi todo el tiempo y mayormente en CPU. En E (2 CPU, pool 20) hay
+más conexiones ociosas, porque el tiempo retenido está casi todo fuera de
+Postgres, y la espera por el WAL baja porque casi no hay throttling.
+
+**Carga.** Igual que E4 (`RATE=35000`, 1 minuto, `MAX_VUS=2000`). Las
+conexiones son el promedio de 9 fotos (una por scrape) de los últimos 45 s.
+
+**Resultado.**
+
+| | B (1 CPU, pool 10) | E (2 CPU, pool 20) |
+|---|---|---|
+| Atendido / transacciones de Postgres | 15,2k / 15,2k por s | 28,8k / 28,8k por s |
+| CPU de Postgres / throttling | 1,00 / 1,5 s/s | 1,85 / ~0 |
+| `idle` (Postgres espera a la app) | 6,0 (60%) | 14,2 (71%) |
+| `active` esperando el WAL (`LWLock WALWrite`, `IO WalSync`, `IO WalWrite`) | 3,2 | 4,8 |
+| `active` en CPU (sin wait event) | 0,7 | 0,2 |
+| `active` en `ClientRead` | 0,1 | 0,8 |
+| Tiempo activo que es espera del WAL | 80% | 83% |
+
+- **La mayor parte del tiempo, la conexión retenida está ociosa del lado de
+  Postgres.** La app la tiene, pero todavía no mandó la query o está
+  procesando la respuesta. Es el tiempo "fuera de la base" que E4 calculaba
+  por afuera, ahora visto directamente, y explica por qué agrandar el pool
+  rinde poco.
+- **Las escrituras son el 10% de los requests y ocupan ~80% del tiempo activo.**
+  Cada `INSERT` hace commit y espera a que el WAL llegue a disco
+  (`synchronous_commit=on`), y esas escrituras se serializan detrás de
+  `WALWriteLock`.
+- **pg_stat_activity sirve para ver esperas, no para medir CPU.** En E,
+  Postgres usa 1,85 CPU pero casi ninguna foto encuentra una conexión en CPU.
+  Las lecturas duran decenas de µs y casi nunca caen en una foto cada 5 s, y
+  parte de la CPU es del kernel (red, fsync) y de procesos de fondo. La CPU se
+  sigue midiendo con cAdvisor.
+
+**En qué me equivoqué.** Esperaba las conexiones activas y en CPU, y el 60–70%
+está ocioso. También supuse que la espera del WAL venía del throttling (el
+kernel congelando al proceso que tiene el lock), y no bajó al sacar el
+throttling: es el costo propio de cada commit.
+
 ## Trampas de medición
 
 Aparecieron en esta fase y van a volver a aparecer en todas:
@@ -306,9 +356,11 @@ Aparecieron en esta fase y van a volver a aparecer en todas:
    ventana.** El contador de 499 no existía antes de la caída: `increase()` dio
    273, y el valor real del contador era 458. Para totales exactos, restar el
    valor crudo del contador antes y después.
-4. **Series de una instancia anterior.** Después de recrear la app, Prometheus
-   muestra un rato las series de la IP vieja. Si una consulta toma el primer
-   resultado, puede leer la instancia equivocada.
+4. **Series de una instancia anterior.** Después de recrear un contenedor,
+   Prometheus sigue mostrando hasta 5 minutos las series de la IP vieja (más si
+   `make down` también apagó Prometheus y no llegó a marcarlas como vencidas).
+   Un `sum` las suma: en E5 aparecieron 30 conexiones con un pool de 20. Filtrar
+   por la `instance` actual en vez de esperar.
 5. **k6 corre en la misma máquina.** Hay que confirmar que el host no esté al
    tope (`docker stats` o la CPU de todos los contenedores) antes de culpar al
    sistema. En E4, k6 llegó a usar 3,6 CPU.
@@ -320,8 +372,12 @@ Aparecieron en esta fase y van a volver a aparecer en todas:
    límites reales (`docker inspect ... NanoCpus`).
 7. **La leyenda `mean` de Grafana promedia todo el rango visible.** Incluye los
    minutos sin carga entre corridas: "DB pool: waits/s" mostraba ~13k cuando
-   la meseta de la corrida era 25k. Para leer una corrida hay que mirar la
-   meseta o el `max`.
+   la meseta de la corrida era 25k. Por eso las leyendas del dashboard muestran
+   solo `max` y `last`.
+8. **`avg_over_time` sobre series intermitentes las infla.** Un wait event que
+   aparece en 2 de 9 scrapes se promedia solo sobre esos 2. Las esperas sumaban
+   más que las conexiones activas. Para promediar fotos, usar
+   `sum_over_time(...) / cantidad de muestras`.
 
 ## Conclusiones y mitigaciones
 
@@ -349,6 +405,7 @@ Ninguna está aplicada todavía: son el punto de partida de las fases siguientes
 | Prometheus y Grafana | Amazon Managed Service for Prometheus, Amazon Managed Grafana / CloudWatch |
 | Loki | CloudWatch Logs |
 | cAdvisor | CloudWatch Container Insights |
+| postgres_exporter | RDS Performance Insights (carga por wait event) / Enhanced Monitoring |
 | k6 | Grafana Cloud k6 / Distributed Load Testing on AWS |
 
 ## Qué sigue
